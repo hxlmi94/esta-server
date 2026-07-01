@@ -6,6 +6,15 @@ import multer from 'multer';
 const app = express();
 app.use(express.json());
 
+// CORS — frontend'den çağrı için
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const supabase = createClient(
@@ -13,120 +22,43 @@ const supabase = createClient(
   process.env.SUPABASE_SECRET_KEY
 );
 
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-const AIRTABLE_TABLES = (process.env.AIRTABLE_TABLES || 'Projeler,Daireler,Odemeler')
-  .split(',')
-  .map((t) => t.trim())
-  .filter(Boolean);
-
 const SYSTEM_PROMPT = `Sen Esta'sın. Bir emlak, inşaat ve bina yönetimi şirketinin asistanısın.
 Sıcak, doğrudan ve arkadaş gibi konuşursun. Resmi değilsin, "ne yapmamı istersiniz" gibi sormazsın, durumu direkt söylersin.
 Cevapların kısa ve net olsun, gereksiz uzatma.
-Sana aşağıda şirketin Airtable verisi ve yüklü dosyalar verilecek. Sadece bu veriye dayanarak cevap ver. Veride olmayan bir şeyi sorarsa, veride bulamadığını dürtmeden söyle, uydurma.
+Bugünün tarihi cevaplarken hesaba katılır: yaklaşan kontrat bitişleri, ödeme günleri, biten/devam eden projeler için tarih farkını sen yorumla.
+Sadece sana verilen şirket verisine dayanarak cevap ver. Veride olmayan bir şeyi sorarsa dürüstçe bulamadığını söyle, uydurma.
 Türkçe konuş.`;
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-async function fetchAirtableTable(tableName) {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Airtable hatası (${tableName}): ${res.status} ${text}`);
-  }
-  const data = await res.json();
-  return data.records.map((r) => r.fields);
-}
-
+// Supabase'den tüm iş verisini topla
 async function buildContext() {
-  const parts = [];
-  for (const table of AIRTABLE_TABLES) {
+  const parts = [`Bugünün tarihi: ${new Date().toLocaleDateString('tr-TR')}`];
+  const tablolar = ['projeler', 'kisiler', 'kontratlar', 'ilanlar', 'binalar', 'daireler', 'aidatlar', 'hareketler', 'talepler', 'duyurular'];
+  for (const t of tablolar) {
     try {
-      const records = await fetchAirtableTable(table);
-      parts.push(`## ${table}\n${JSON.stringify(records)}`);
+      const { data, error } = await supabase.from(t).select('*').limit(200);
+      if (error) throw error;
+      if (data && data.length) parts.push(`## ${t}\n${JSON.stringify(data)}`);
     } catch (err) {
-      parts.push(`## ${table}\n(bu tablo okunamadı: ${err.message})`);
+      parts.push(`## ${t}\n(okunamadı: ${err.message})`);
     }
   }
   return parts.join('\n\n');
 }
 
-// Dosya yükleme
-app.post('/upload', upload.single('file'), async (req, res) => {
-  try {
-    const { company_id } = req.body;
-    if (!req.file || !company_id) {
-      return res.status(400).json({ error: 'Dosya ve company_id gerekli' });
-    }
-
-    const fileName = `${company_id}/${Date.now()}_${req.file.originalname}`;
-    const { error } = await supabase.storage
-      .from('documents')
-      .upload(fileName, req.file.buffer, {
-        contentType: req.file.mimetype,
-      });
-
-    if (error) throw error;
-
-    const { data: urlData } = supabase.storage
-      .from('documents')
-      .getPublicUrl(fileName);
-
-    await supabase.from('files').insert({
-      company_id,
-      name: req.file.originalname,
-      url: urlData.publicUrl,
-      path: fileName,
-    });
-
-    res.json({ success: true, url: urlData.publicUrl });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Dosya listesi
-app.get('/files/:company_id', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('files')
-      .select('*')
-      .eq('company_id', req.params.company_id);
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // Soru sor
 app.post('/ask', async (req, res) => {
   try {
-    const { question, company_id } = req.body;
-    if (!question) {
-      return res.status(400).json({ error: 'question alanı gerekli' });
-    }
+    const { question } = req.body;
+    if (!question) return res.status(400).json({ error: 'question alanı gerekli' });
 
     const context = await buildContext();
 
-    let fileContext = '';
-    if (company_id) {
-      const { data: files } = await supabase
-        .from('files')
-        .select('name, url')
-        .eq('company_id', company_id);
-      if (files && files.length > 0) {
-        fileContext = '\n\nYüklü dosyalar:\n' + files.map((f) => `- ${f.name}: ${f.url}`).join('\n');
-      }
-    }
-
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      system: `${SYSTEM_PROMPT}\n\nŞirketin güncel Airtable verisi:\n${context}${fileContext}`,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: `${SYSTEM_PROMPT}\n\nŞirketin güncel verisi:\n${context}`,
       messages: [{ role: 'user', content: question }],
     });
 
@@ -143,6 +75,4 @@ app.get('/', (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Esta sunucusu ${port} portunda çalışıyor`);
-});
+app.listen(port, () => console.log(`Esta sunucusu ${port} portunda çalışıyor`));
