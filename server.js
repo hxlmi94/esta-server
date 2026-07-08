@@ -34,7 +34,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Supabase'den tüm iş verisini topla
 async function buildContext() {
   const parts = [`Bugünün tarihi: ${new Date().toLocaleDateString('tr-TR')}`];
-  const tablolar = ['projeler', 'kisiler', 'kontratlar', 'ilanlar', 'binalar', 'daireler', 'aidatlar', 'hareketler', 'talepler', 'duyurular'];
+  const tablolar = ['hafiza', 'projeler', 'kisiler', 'kontratlar', 'ilanlar', 'hareketler'];
   for (const t of tablolar) {
     try {
       const { data, error } = await supabase.from(t).select('*').limit(200);
