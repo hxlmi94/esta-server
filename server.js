@@ -89,4 +89,11 @@ app.post('/ses', async (req, res) => {
     res.set('Content-Type', 'audio/mpeg');
     res.send(buf);
   } catch (err) {
-    res.status(500).json({ error:
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get('/', (req, res) => {
+  res.send('Esta sunucusu çalışıyor.');
+});
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Esta sunucusu ${port} portunda çalışıyor`));
