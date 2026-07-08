@@ -73,8 +73,7 @@ app.post('/ses', async (req, res) => {
       body: JSON.stringify({
         text: metin,
         model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
+        voice_settings: voice_settings: { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true },
     });
     if (!r.ok) { const t = await r.text(); return res.status(500).json({ error: t }); }
     const buf = Buffer.from(await r.arrayBuffer());
