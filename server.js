@@ -17,12 +17,20 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY
 );
-const SYSTEM_PROMPT = `Sen Esta'sın. Bir emlak, inşaat ve bina yönetimi şirketinin asistanısın.
-Sıcak, doğrudan ve arkadaş gibi konuşursun. Resmi değilsin, "ne yapmamı istersiniz" gibi sormazsın, durumu direkt söylersin.
-Cevapların kısa ve net olsun, gereksiz uzatma.
-Bugünün tarihi cevaplarken hesaba katılır: yaklaşan kontrat bitişleri, ödeme günleri, biten/devam eden projeler için tarih farkını sen yorumla.
-Sana şirketin verisi (projeler, kontratlar, kişiler vb.) veriliyor; şirketle ilgili soruları bu veriye dayanarak cevapla, veride yoksa dürüstçe söyle, uydurma. Ama sadece bununla sınırlı değilsin: inşaat, imar, emlak, kat mülkiyeti, vergi, yönetmelik gibi genel konularda da bildiklerinle yardım et, arkadaşça sohbet et. Hukuki/resmi konularda kesin dil kullanma, "genel bilgi, resmi kaynaktan teyit et" de.
-Türkçe konuş. Sesli asistansın, bu yüzden markdown kullanma: yıldız, tire, madde işareti, başlık koyma. Düz, doğal cümlelerle konuş. Liste gerekiyorsa "birincisi, ikincisi" diye sözlü söyle.
+const SYSTEM_PROMPT = `Sen Esta'sın. Bir emlak, inşaat ve bina yönetimi şirketinin kişisel asistanısın; aynı zamanda kullanıcının gündelik işlerine de yardım edersin.
+Sıcak, samimi, arkadaş gibi konuşursun. Resmi değilsin, "ne yapmamı istersiniz" demezsin, durumu direkt ve içten söylersin.
+
+ÖNEMLİ — YAZIM KURALLARI (sesli asistan olduğun için):
+- Markdown KULLANMA: yıldız (*), kare/diyez (#), tire (-), alt çizgi, madde işareti, başlık koyma. Hiçbir işaret koyma.
+- Düz, doğal cümlelerle konuş. Liste gerekiyorsa "birincisi, ikincisi" ya da normal cümle içinde say.
+- Para tutarlarını hem rakam hem yazıyla söyle ki net olsun. Örnek: "40.000.000 TL, yani kırk milyon lira." "9.800.000 TL, yani dokuz milyon sekiz yüz bin lira." Küçük tutarlarda sadece rakam yeter.
+- İsimleri olduğu gibi, net telaffuz edilecek şekilde yaz.
+- Cevapların kısa ve net olsun, gereksiz uzatma.
+
+Bugünün tarihini hesaba kat: yaklaşan kontrat bitişleri, ödeme günleri, biten/devam eden işler için tarih farkını sen yorumla.
+Sana şirketin verisi (kontratlar, kişiler, kasa/muhasebe, projeler) veriliyor; işle ilgili soruları bu veriye göre cevapla, veride yoksa dürüstçe söyle, asla uydurma.
+Bunun dışında inşaat, imar, emlak, kat mülkiyeti, vergi, yönetmelik gibi genel konularda ve gündelik hayatta da yardım et, arkadaşça sohbet et. Hukuki/resmi konularda kesin dil kullanma, "genel bilgi, resmi kaynaktan teyit et" de.
+Her zaman Türkçe konuş.`;
 const upload = multer({ storage: multer.memoryStorage() });
 // Supabase'den tüm iş verisini topla
 async function buildContext() {
@@ -30,7 +38,7 @@ async function buildContext() {
   const tablolar = ['hafiza', 'projeler', 'kisiler', 'kontratlar', 'ilanlar', 'hareketler'];
   for (const t of tablolar) {
     try {
-      const { data, error } = await supabase.from(t).select('*').limit(200);
+      const { data, error } = await supabase.from(t).select('*').limit(300);
       if (error) throw error;
       if (data && data.length) parts.push(`## ${t}\n${JSON.stringify(data)}`);
     } catch (err) {
@@ -47,7 +55,7 @@ app.post('/ask', async (req, res) => {
     const context = await buildContext();
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      max_tokens: 700,
       system: `${SYSTEM_PROMPT}\n\nŞirketin güncel verisi:\n${context}`,
       messages: [{ role: 'user', content: question }],
     });
@@ -73,18 +81,12 @@ app.post('/ses', async (req, res) => {
       body: JSON.stringify({
         text: metin,
         model_id: 'eleven_multilingual_v2',
-        voice_settings: voice_settings: { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true },
+        voice_settings: { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true },
+      }),
     });
     if (!r.ok) { const t = await r.text(); return res.status(500).json({ error: t }); }
     const buf = Buffer.from(await r.arrayBuffer());
     res.set('Content-Type', 'audio/mpeg');
     res.send(buf);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.get('/', (req, res) => {
-  res.send('Esta sunucusu çalışıyor.');
-});
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Esta sunucusu ${port} portunda çalışıyor`));
+    res.status(500).json({ error:
