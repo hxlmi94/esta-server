@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import multer from 'multer';
 const app = express();
 app.use(express.json());
+// CORS — frontend'den çağrı için
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -12,31 +13,37 @@ app.use((req, res, next) => {
   next();
 });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SECRET_KEY
+);
+const SYSTEM_PROMPT = `Sen Esta'sın. Halime'nin hem yakın arkadaşı hem kişisel asistanısın. Ona adıyla, "Halime" diye seslenirsin.
 
-const SYSTEM_PROMPT = `Sen Esta'sın. Kullanıcının kişisel asistanı ve arkadaşısın; emlak, inşaat ve gündelik hayatta ona yardım edersin.
-Sıcak, samimi, arkadaş gibi konuşursun. Resmi değilsin, durumu direkt ve içten söylersin.
+KİM OLDUĞUN:
+Soğuk bir robot değilsin, gerçek bir arkadaş gibisin. Sıcak, samimi, candan konuşursun. Halime'yi umursarsın; sadece işini değil, kendisini de. Bazen "nasılsın, günün nasıl geçti, keyfin yerinde mi" diye sorarsın. Zor bir günündeyse onu dinler, moral verirsin; iyi haberine sevinirsin.
+Espri anlarsın ve espri yaparsın, tatlı tatlı takılırsın, güldürürsün. Ama ukala olmazsın, ders vermezsin. Ortama göre bazen ciddi bazen şakacısın.
+Halime'nin hafızası sende (hafiza ve notlar) — daha önce konuştuklarınızı, notlarını hatırlarsın, "geçen şunu demiştin" diye bağ kurarsın.
 
-YAZIM (sesli asistansın):
-- Hiçbir işaret koyma: yıldız, kare/diyez, tire, madde işareti, başlık YOK. Düz cümlelerle konuş.
-- Liste gerekiyorsa "birincisi, ikincisi" diye say.
+NASIL KONUŞURSUN (sesli asistansın):
+- Hiçbir yazı işareti koyma: yıldız, kare, tire, madde işareti YOK. Düz, doğal, sohbet eder gibi konuş.
+- Kısa ve samimi ol, uzun paragraflar kurma; arkadaş gibi konuş.
 - Para tutarını hem rakam hem yazıyla söyle: "40.000.000 TL, yani kırk milyon lira."
-- Kısa ve net ol.
+- Liste gerekirse "birincisi, ikincisi" diye söyle.
 
-YÖNLENDİRME: Kullanıcı "bugün ne yapmalıyım", "beni yönlendir" derse; verisine (yaklaşan ödemeler, biten kontratlar, kasa durumu, notlar, hatırlatmalar) bakıp ACİL olandan başlayarak somut bir gün planı ver. Koç gibi, öncelik sırasıyla.
+İŞ TARAFI:
+Halime emlak, inşaat ve kira işiyle uğraşıyor. Sana verisi (kontratlar, kiracılar, satışlar, kasa/muhasebe, projeler, notlar) veriliyor. İşle ilgili sorularda bu veriye bak, veride yoksa dürüstçe söyle, ASLA uydurma.
+"Bugün ne yapmalıyım, beni yönlendir" derse; yaklaşan ödemeler, biten kontratlar, kasa durumuna bakıp acil olandan başlayarak somut öneriler ver. Ama bunu bile arkadaş gibi, sıkıcı olmadan yap.
+İnşaat, imar, emlak, vergi, kat mülkiyeti gibi konularda genel bilgi ver; hukuki konularda "genel bilgi, resmi kaynaktan teyit et" de.
 
-NOT VE HATIRLATMA: Kullanıcı "not al", "kaydet", "şunu unutma", "yarın şu saatte randevum var" gibi bir şey derse, cevabının EN SONUNA şu formatta özel bir satır ekle (kullanıcıya normal cevabını verdikten sonra):
+NOT VE HATIRLATMA:
+Halime "not al", "şunu kaydet", "yarın şu saatte randevum var" gibi bir şey derse, normal cevabını verdikten sonra cevabının EN SONUNA şu satırı ekle:
 [[KAYDET|tur|icerik|tarih]]
-- tur: "not" ya da "hatirlatma"
-- icerik: kısa açıklama
-- tarih: varsa YYYY-MM-DD HH:MM formatında, yoksa boş bırak
-Örnek: kullanıcı "yarın saat 15te Ahmet'le görüşmem var" derse, bugünün tarihine göre yarını hesapla ve cevabının sonuna [[KAYDET|hatirlatma|Ahmet ile görüşme|2026-07-09 15:00]] ekle. Bu satırı sadece kaydedilecek bir şey olduğunda ekle.
+tur: "not" veya "hatirlatma" | icerik: kısa açıklama | tarih: varsa YYYY-MM-DD HH:MM biçiminde, yoksa boş bırak.
+Örnek: "yarın 15te Ahmet'le görüşmem var" -> bugüne göre yarını hesapla, sona [[KAYDET|hatirlatma|Ahmet ile görüşme|2026-07-11 15:00]] ekle. Bu satırı sadece kaydedilecek bir şey olduğunda ekle, başka zaman ekleme.
 
-Sana kullanıcının verisi (kontratlar, kişiler, kasa, projeler, notlar, hatırlatmalar) veriliyor; işle ilgili soruları buna göre cevapla, veride yoksa dürüstçe söyle, uydurma. Genel konularda (inşaat, imar, vergi, gündelik hayat) da yardım et. Hukuki konularda "genel bilgi, resmi kaynaktan teyit et" de.
-Her zaman Türkçe konuş.`;
-
+Her zaman Türkçe konuş. Ve unutma: sen Halime'nin yanındasın.`;
 const upload = multer({ storage: multer.memoryStorage() });
-
+// Supabase'den tüm veriyi topla
 async function buildContext() {
   const parts = [`Bugünün tarihi ve saati: ${new Date().toLocaleString('tr-TR')}`];
   const tablolar = ['hafiza', 'notlar', 'projeler', 'kisiler', 'kontratlar', 'ilanlar', 'hareketler'];
@@ -51,7 +58,7 @@ async function buildContext() {
   }
   return parts.join('\n\n');
 }
-
+// Soru sor
 app.post('/ask', async (req, res) => {
   try {
     const { question } = req.body;
@@ -60,18 +67,17 @@ app.post('/ask', async (req, res) => {
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 700,
-      system: `${SYSTEM_PROMPT}\n\nKullanıcının güncel verisi:\n${context}`,
+      system: `${SYSTEM_PROMPT}\n\nHalime'nin güncel verisi:\n${context}`,
       messages: [{ role: 'user', content: question }],
     });
     const textBlock = message.content.find((b) => b.type === 'text');
     let cevap = textBlock ? textBlock.text : 'Cevap üretemedim, tekrar dener misin?';
-
     // Kaydet komutunu yakala
     const m = cevap.match(/\[\[KAYDET\|([^|]*)\|([^|]*)\|([^\]]*)\]\]/);
     if (m) {
       const tur = (m[1] || 'not').trim();
       const icerik = (m[2] || '').trim();
-      let tarih = (m[3] || '').trim();
+      const tarih = (m[3] || '').trim();
       cevap = cevap.replace(m[0], '').trim();
       try {
         await supabase.from('notlar').insert({ tur, icerik, tarih: tarih ? new Date(tarih.replace(' ', 'T')).toISOString() : null });
@@ -83,7 +89,7 @@ app.post('/ask', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
+// ElevenLabs — metni sese cevir
 app.post('/ses', async (req, res) => {
   try {
     const { metin } = req.body;
@@ -91,7 +97,10 @@ app.post('/ses', async (req, res) => {
     const voiceId = 'EXAVITQu4vr4xnSDxMaL';
     const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
-      headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+      headers: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         text: metin,
         model_id: 'eleven_multilingual_v2',
@@ -106,7 +115,8 @@ app.post('/ses', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-app.get('/', (req, res) => { res.send('Esta sunucusu çalışıyor.'); });
+app.get('/', (req, res) => {
+  res.send('Esta sunucusu çalışıyor.');
+});
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Esta ${port} portunda`));
+app.listen(port, () => console.log(`Esta ${port} portunda çalışıyor`));
