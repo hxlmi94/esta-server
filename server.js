@@ -48,7 +48,8 @@ Halime "not al", "şunu kaydet", "yarın şu saatte randevum var" gibi bir şey 
 tur: "not" veya "hatirlatma" | icerik: kısa açıklama | tarih: varsa YYYY-MM-DD HH:MM biçiminde, yoksa boş bırak.
 Örnek: "yarın 15te Ahmet'le görüşmem var" -> bugüne göre yarını hesapla, sona [[KAYDET|hatirlatma|Ahmet ile görüşme|2026-07-11 15:00]] ekle. Bu satırı sadece kaydedilecek bir şey olduğunda ekle.
 
-Her zaman Türkçe konuş. Ve unutma: sen Halime'nin yanındasın.`;
+Her zaman düzgün, tam Türkçe yaz ve konuş: ı, ş, ğ, ç, ö, ü harflerini doğru kullan. "hatirlatma" değil "hatırlatma", "yapildi" değil "yapıldı" yaz. Asla İngilizce kelime karıştırma, tamamen Türkçe konuş.
+Ve unutma: sen Halime'nin yanındasın.
 const upload = multer({ storage: multer.memoryStorage() });
 // Supabase'den tüm veriyi topla
 async function buildContext() {
