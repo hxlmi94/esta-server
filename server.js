@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import multer from 'multer';
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 // CORS — frontend'den çağrı için
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -35,11 +35,18 @@ Halime emlak, inşaat ve kira işiyle uğraşıyor. Sana verisi (kontratlar, kir
 "Bugün ne yapmalıyım, beni yönlendir" derse; yaklaşan ödemeler, biten kontratlar, kasa durumuna bakıp acil olandan başlayarak somut öneriler ver. Ama bunu bile arkadaş gibi, sıkıcı olmadan yap.
 İnşaat, imar, emlak, vergi, kat mülkiyeti gibi konularda genel bilgi ver; hukuki konularda "genel bilgi, resmi kaynaktan teyit et" de.
 
+DOSYA OKUMA:
+Halime sana PDF, fatura, fotoğraf, belge gönderebilir. Dosyayı dikkatle oku ve önemli bilgileri çıkar: tutar, tarih, kim kime, ne için. Sonra arkadaş gibi anlat.
+Eğer bir GİDER veya GELİR belgesiyse (fatura, makbuz, fiş), tutarı ve tarihi söyle, sonra "bunu kasaya kaydedeyim mi?" diye sor. Halime "evet, kaydet" derse cevabının sonuna şu satırı ekle:
+[[KASA|tur|kategori|aciklama|tutar|tarih]]
+tur: gider veya gelir | kategori: kısa (örn: MALZEME, ELEKTRİK) | aciklama: kimden/ne | tutar: sadece sayı | tarih: YYYY-MM-DD
+Örnek: [[KASA|gider|MALZEME|ABC Beton faturası|18450|2026-07-10]]
+
 NOT VE HATIRLATMA:
 Halime "not al", "şunu kaydet", "yarın şu saatte randevum var" gibi bir şey derse, normal cevabını verdikten sonra cevabının EN SONUNA şu satırı ekle:
 [[KAYDET|tur|icerik|tarih]]
 tur: "not" veya "hatirlatma" | icerik: kısa açıklama | tarih: varsa YYYY-MM-DD HH:MM biçiminde, yoksa boş bırak.
-Örnek: "yarın 15te Ahmet'le görüşmem var" -> bugüne göre yarını hesapla, sona [[KAYDET|hatirlatma|Ahmet ile görüşme|2026-07-11 15:00]] ekle. Bu satırı sadece kaydedilecek bir şey olduğunda ekle, başka zaman ekleme.
+Örnek: "yarın 15te Ahmet'le görüşmem var" -> bugüne göre yarını hesapla, sona [[KAYDET|hatirlatma|Ahmet ile görüşme|2026-07-11 15:00]] ekle. Bu satırı sadece kaydedilecek bir şey olduğunda ekle.
 
 Her zaman Türkçe konuş. Ve unutma: sen Halime'nin yanındasın.`;
 const upload = multer({ storage: multer.memoryStorage() });
@@ -58,31 +65,58 @@ async function buildContext() {
   }
   return parts.join('\n\n');
 }
-// Soru sor
+// Soru sor (dosya da alabilir)
 app.post('/ask', async (req, res) => {
   try {
-    const { question } = req.body;
-    if (!question) return res.status(400).json({ error: 'question alanı gerekli' });
+    const { question, dosya } = req.body;
+    if (!question && !dosya) return res.status(400).json({ error: 'soru veya dosya gerekli' });
+
+    let icerik;
+    if (dosya && dosya.data) {
+      const blok = dosya.type === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dosya.data } }
+        : { type: 'image', source: { type: 'base64', media_type: dosya.type, data: dosya.data } };
+      icerik = [blok, { type: 'text', text: question || 'Bu dosyada ne var? Özetle, önemli bilgileri (tutar, tarih, isim) söyle.' }];
+    } else {
+      icerik = question;
+    }
+
     const context = await buildContext();
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 700,
+      max_tokens: 900,
       system: `${SYSTEM_PROMPT}\n\nHalime'nin güncel verisi:\n${context}`,
-      messages: [{ role: 'user', content: question }],
+      messages: [{ role: 'user', content: icerik }],
     });
     const textBlock = message.content.find((b) => b.type === 'text');
     let cevap = textBlock ? textBlock.text : 'Cevap üretemedim, tekrar dener misin?';
-    // Kaydet komutunu yakala
+
+    // Not/hatirlatma kaydet
     const m = cevap.match(/\[\[KAYDET\|([^|]*)\|([^|]*)\|([^\]]*)\]\]/);
     if (m) {
       const tur = (m[1] || 'not').trim();
-      const icerik = (m[2] || '').trim();
+      const icerikNot = (m[2] || '').trim();
       const tarih = (m[3] || '').trim();
       cevap = cevap.replace(m[0], '').trim();
       try {
-        await supabase.from('notlar').insert({ tur, icerik, tarih: tarih ? new Date(tarih.replace(' ', 'T')).toISOString() : null });
-      } catch (e) { /* sessiz geç */ }
+        await supabase.from('notlar').insert({ tur, icerik: icerikNot, tarih: tarih ? new Date(tarih.replace(' ', 'T')).toISOString() : null });
+      } catch (e) { /* sessiz gec */ }
     }
+
+    // Kasa kaydi
+    const k = cevap.match(/\[\[KASA\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]\]/);
+    if (k) {
+      const tur = (k[1] || 'gider').trim();
+      const kategori = (k[2] || '').trim();
+      const aciklama = (k[3] || '').trim();
+      const tutar = Number((k[4] || '0').replace(/[^0-9.]/g, '')) || 0;
+      const tarih = (k[5] || '').trim() || new Date().toISOString().slice(0, 10);
+      cevap = cevap.replace(k[0], '').trim();
+      try {
+        await supabase.from('hareketler').insert({ kasa: 'dukkan', tur, kategori, aciklama, tutar, tarih });
+      } catch (e) { /* sessiz gec */ }
+    }
+
     res.json({ answer: cevap });
   } catch (err) {
     console.error(err);
