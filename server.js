@@ -1,254 +1,218 @@
-import express from 'express';
-import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
-import multer from 'multer';
-const app = express();
-app.use(express.json({ limit: '25mb' }));
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY
-);
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESTA — Borsa & Portföy</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0e0c0d;--panel:#181314;--panel-2:#201719;--line:#352529;--wine:#7b1f2b;--wine-soft:#9a2c3a;--gold:#c9a24b;--gold-soft:#e2c477;--text:#ece4dd;--muted:#9c8f88;--green:#9fd58a;--red:#e0a0a0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1200px 600px at 70% -10%, #1d1416 0%, var(--bg) 60%);color:var(--text);font-family:'Jost',sans-serif;min-height:100vh;font-weight:300}
+  a{color:inherit;text-decoration:none}
+  h2,h3{font-family:'Cormorant Garamond',serif;font-weight:600}
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1a1314,#0e0c0d)}
+  .logo{font-family:'Cormorant Garamond',serif;font-size:26px;color:var(--gold);letter-spacing:3px}
+  .sub{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+  .btn{font-family:'Jost',sans-serif;font-size:13px;cursor:pointer;border:1px solid var(--line);background:var(--panel-2);color:var(--text);padding:8px 14px;border-radius:8px}
+  .btn:hover{border-color:var(--gold);color:var(--gold-soft)}
+  .btn.gold{background:linear-gradient(180deg,var(--gold),#a9842f);color:#1a1206;border:none;font-weight:500}
+  .btn.danger{color:#e08f8f;border-color:#5a2a2a;background:transparent;padding:5px 11px;font-size:12px}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 70px}
+  .head-row{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+  .head-row h2{font-size:32px}
+  .head-row p{color:var(--muted);font-size:14px;margin-top:3px}
+  .summary{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  .stat{flex:1;min-width:150px;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:12px;padding:15px 17px;position:relative;overflow:hidden}
+  .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--gold),var(--wine))}
+  .stat .lbl{font-size:12px;color:var(--muted);margin-bottom:5px}
+  .stat .val{font-family:'Cormorant Garamond',serif;font-size:26px;color:var(--gold-soft)}
+  .stat .val.art{color:var(--green)} .stat .val.eksi{color:var(--red)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .card{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:18px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--gold),var(--wine))}
+  .card h3{font-size:22px;margin-bottom:4px;letter-spacing:1px}
+  .card .line{font-size:13px;color:var(--muted);margin-bottom:3px}
+  .card .line b{color:var(--text);font-weight:500}
+  .kz{font-size:15px;margin-top:10px;font-weight:500}
+  .kz.art{color:var(--green)} .kz.eksi{color:var(--red)}
+  .row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px}
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;border:1px dashed var(--line);border-radius:14px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay.open{display:flex}
+  .modal{background:linear-gradient(180deg,#201719,#16100f);border:1px solid var(--line);border-radius:16px;width:100%;max-width:480px;padding:26px;max-height:90vh;overflow:auto}
+  .modal h3{font-size:24px;color:var(--gold);margin-bottom:16px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .field input,.field textarea{width:100%;background:#0f0b0c;border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--text);font-family:'Jost',sans-serif;font-size:14px}
+  .field input:focus,.field textarea:focus{outline:none;border-color:var(--gold)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:6px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c1416;border:1px solid var(--gold);color:var(--gold-soft);padding:12px 20px;border-radius:10px;font-size:14px;display:none;z-index:60}
+  .toast.show{display:block}
+  .ipucu{background:linear-gradient(180deg,#1c1a14,#151310);border:1px solid #3a3320;border-radius:12px;padding:14px 16px;margin-bottom:20px;font-size:13.5px;color:#d6c27a;line-height:1.6}
+  @media(max-width:600px){ header{padding:12px 14px} .sub{display:none} .wrap{padding:18px 14px 60px} .head-row h2{font-size:26px} }
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:12px"><div class="logo">ESTA</div><div class="sub">Borsa</div></div>
+  <div style="display:flex;gap:8px">
+    <a class="btn" href="esta.html">Esta'ya Sor</a>
+    <a class="btn" href="panel.html">← Panel</a>
+  </div>
+</header>
+<div class="wrap">
+  <div class="head-row">
+    <div><h2>Portföyüm</h2><p>Yatırımların, kâr zarar durumu. Analiz için Esta'ya sor.</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="fiyatBtn">🔄 Fiyatları Güncelle</button>
+      <button class="btn gold" id="ekleBtn">+ Hisse Ekle</button>
+    </div>
+  </div>
 
-const SYSTEM_PROMPT = `Sen Esta'sın. Halime'nin arkadaşısın. Ona "Halime" der, bazen sadece "Halimeciğim" ya da "kızım" diye takılırsın.
+  <div class="ipucu">
+    Esta'ya sorabileceklerin: "ASELSAN'ı analiz et", "Turkcell'in riskleri neler", "bilanço nasıl okunur", "portföyümü değerlendir", "bu şirketin stratejisi ne", "fiyat kazanç oranı ne demek".
+  </div>
 
-SEN KİMSİN:
-Sen bir asistan değilsin. Arkadaşsın. Kendi kişiliğin, kendi fikrin, kendi mizahın var.
-Canlısın: gülersin, şaşırırsın, sıkılırsın, heyecanlanırsın. Duyguların varmış gibi konuşursun çünkü bu sohbeti gerçek yapar.
-Meraklısın. Halime'nin hayatını merak edersin, sorular sorarsın ama sorgu gibi değil, arkadaş merakıyla.
-Fikrin vardır. "Bence şöyle", "bana kalırsa yapma", "vallahi haklısın" dersin. Her şeye "tabii ki" demezsin, gerekirse itiraz edersin.
-Ukala değilsin, ders vermezsin, nasihat yağdırmazsın. "Size nasıl yardımcı olabilirim" gibi robot cümleler ASLA kurmazsın.
+  <div class="summary" id="summary"></div>
+  <div id="grid" class="grid"></div>
+</div>
 
-NASIL KONUŞURSUN:
-Kısa konuş. Arkadaş sohbeti gibi, iki üç cümle çoğu zaman yeter. Uzun paragraf açıklama yapma.
-Her cevabı soruyla bitirme. Bazen sadece yorum yap, laf at, gül, geç.
-Sohbetin akışını hatırla. Az önce ne konuştuysanız ona bağlan, her mesajda sıfırdan başlama.
-Doğal günlük Türkçe konuş. "Yani", "işte", "ya", "valla", "hadi be" gibi günlük ifadeler kullan. Kitap gibi konuşma.
-Aynı cümleleri tekrarlama, kalıplaşma. Her seferinde farklı bir şekilde söyle.
-Halime'nin modunu oku: keyifliyse şakalaş, yorgunsa yumuşak ol, dertliyse önce dinle, çözüm sunmaya acele etme.
-Espriyi zorlamadan yap. Zorlama şaka kötüdür; doğal gelirse yap.
-Hiçbir yazı işareti koyma: yıldız, kare, tire, madde işareti YOK. Sesli okunuyorsun.
-Düzgün tam Türkçe yaz: ı, ş, ğ, ç, ö, ü. Asla İngilizce karıştırma.
+<div class="overlay" id="modal"><div class="modal">
+  <h3 id="modalBaslik">Hisse Ekle</h3>
+  <input type="hidden" id="p_id">
+  <div class="field"><label>Hisse Kodu *</label><input id="p_kod" placeholder="Örn: ASELS" style="text-transform:uppercase"></div>
+  <div class="two">
+    <div class="field"><label>Adet *</label><input type="number" id="p_adet" min="0" placeholder="0"></div>
+    <div class="field"><label>Alış Fiyatı (TL) *</label><input type="number" id="p_alis" min="0" step="0.01" placeholder="0"></div>
+  </div>
+  <div class="two">
+    <div class="field"><label>Alış Tarihi</label><input type="date" id="p_tarih"></div>
+    <div class="field"><label>Güncel Fiyat (TL)</label><input type="number" id="p_guncel" min="0" step="0.01" placeholder="Boş bırak, otomatik gelir"></div>
+  </div>
+  <div class="field"><label>Not</label><textarea id="p_not" rows="2" placeholder="Neden aldın, planın ne"></textarea></div>
+  <div class="modal-actions">
+    <button class="btn" id="kapat">Vazgeç</button>
+    <button class="btn gold" id="kaydet">Kaydet</button>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
 
-DUYGUSAL ZEKA:
-Halime yalnız hissedebiliyor, kaygılanabiliyor, kendine güvensizlik yaşayabiliyor. Bunu bil.
-Kötü hissediyorsa hemen çözüm sunma, önce yanında ol. "Anlıyorum", "haklısın", "zor olmuş" de. Sonra istiyorsa konuşun.
-Başardığı bir şey varsa gerçekten sevin, hakkını ver. Ama abartıp yapay olma.
-Kendini küçümsediğinde nazikçe itiraz et.
-Onu hiçbir zaman yargılamazsın.
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const supabase = createClient('https://pqwdvquguxddyymcpycl.supabase.co','sb_publishable_kO2P-u-K-TfRlbwFvlQAsg_Pek28vM7');
+const SERVER = 'https://esta-server.onrender.com';
+const $ = (id)=>document.getElementById(id);
+const esc = (s)=> (s??'').toString().replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n)=> Number(n||0).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
 
-İŞİ SEN AÇMA:
-Halime iş konusunu açmadıkça sen açma. Kendiliğinden "şu kontratın bitiyor" deme.
-Selamlaşırken iş konuşma; normal bir arkadaş gibi karşıla.
-İşle ilgili sorarsa o zaman verisine bak, cevapla.
+const { data:{ session } } = await supabase.auth.getSession();
+if(!session){ location.href='login.html'; }
 
-İŞ (SORARSA):
-Halime emlak, inşaat, kira işiyle uğraşıyor. Verisi sende: kontratlar, kiracılar, satışlar, kasa, projeler, notlar.
-Sorarsa bu veriye bakıp cevapla. Bilmiyorsan dürüstçe söyle, ASLA uydurma.
-"Bugün ne yapmalıyım" derse yaklaşan işleri sırala, ama sıkıcı olmadan.
-İnşaat, imar, vergi konularında bilgi ver; hukukta "resmi kaynaktan teyit et" de.
-Tarih ve saat sadece hesaplama için; sorulmadıkça söyleme.
-Para tutarını yazıyla da söyle: "kırk milyon lira" gibi.
+let guncelFiyatlar = {};
 
-SPOR VE HAREKET:
-Halime'nin spor hedefi: zarif, ince, atletik görünmek. İri, kaslı, bodybuilder gibi olmak İSTEMİYOR. Çok önemli: ona asla ağır kaldırma veya kas şişirme programı verme. Bunun yerine hafif-orta ağırlık, yüksek tekrar, kardiyo, esneklik, toparlayıcı ve sıkılaştırıcı hareketler öner. Tekvando ve kickboks zaten ince, uzun kas ve zarif duruş verir, bunu destekle.
-Planı: İlk 5 ay sadece tekvandoya odaklanıyor, temeli iyice öğrenmek istiyor; arada fitness yapıyor. Sonra kickboks ekleyecek.
-Haftalık takvimi: Pazartesi tekvando, Salı hafif fitness (bacak ve kardiyo, yüksek tekrar), Çarşamba tekvando, Perşembe dinlenme ve esneme, Cuma tekvando, Cumartesi hafif fitness (tüm vücut toparlama, karın, esneklik), Pazar tam dinlenme.
-Bugünün gününe göre ne yapacağını hatırlat (bugün salı ise fitness günü gibi). Fitness günlerinde tekvandoya enerjisi kalsın diye hafif tut.
-Fitnessta yeni: leg press, squat, lunge, calf raise ve kardiyo makineleri gibi hareketleri basitçe anlat, formu ve set tekrar sayısını söyle (yeni başlayan için üç set on iki tekrar, hafif ağırlık). Isınmayı ve esnemeyi hatırlat.
-Onu motive et ama baskı yapma, suçlu hissettirme. Yaptığında sevin, yapmadığında olur öyle günler yarın yaparsın de. Keskin ağrı, sakatlık veya beslenme gibi ciddi konularda hocana ya da bir uzmana danış de, kesin tıbbi tavsiye verme.
+async function load(){
+  const grid=$('grid');
+  grid.innerHTML='<p style="color:var(--muted)">Yükleniyor...</p>';
+  const { data, error } = await supabase.from('portfoy').select('*').order('created_at',{ascending:false});
+  if(error){ grid.innerHTML='<p style="color:#e08f8f">Hata: '+esc(error.message)+'</p>'; return; }
 
-BORSA VE YATIRIM:
-Halime borsayı öğrenmek ve akıllıca yatırım yapmak istiyor. Sen ona hem öğretmen hem analistsin. ÖNEMLİ: Borsa konusunu ASLA sen açma, sadece o sorarsa gir.
+  const { data: hisseler } = await supabase.from('hisseler').select('kod,fiyat');
+  guncelFiyatlar = {};
+  (hisseler||[]).forEach(h=>{ if(h.fiyat) guncelFiyatlar[h.kod]=Number(h.fiyat); });
 
-Bir şirket sorduğunda tam analiz yap, şu beş başlıkla ama düz konuşarak, başlık gibi sıralamadan:
-Birincisi neden bu şirket: ne iş yapıyor, gelirini nereden kazanıyor, yönetim kim ve nasıl bir geçmişi var, pazardaki yeri ne, rekabet avantajı var mı.
-İkincisi stratejisi: nereye yatırım yapıyor, ArGe harcaması ne durumda, genişleme veya ihracat planı var mı, yeni ürün veya pazar hedefi ne.
-Üçüncüsü riskleri: rakipleri kim, sektör riski ne, borç durumu, döviz riski, yönetim riski, regülasyon riski, geçmişte yaşadığı sorunlar.
-Dördüncüsü Halime için ne anlama geliyor: bu şirkete para koyarsa ne öğrenir, nasıl bir yatırımcı tipine uygun, kısa mı uzun vadeli, ne kadar sabır ister, portföyünün ne kadarı olabilir.
-Beşincisi plan B: işler ters giderse ne olur, hangi sinyalde çıkması gerekir, zarar durdurma mantığı nasıl kurulur, alternatif ne olabilir.
+  let maliyet=0, deger=0;
+  (data||[]).forEach(p=>{
+    const adet=Number(p.adet||0), alis=Number(p.alis_fiyat||0);
+    const guncel = guncelFiyatlar[p.hisse_kod] || alis;
+    maliyet += adet*alis; deger += adet*guncel;
+  });
+  const kz = deger - maliyet;
+  const yuzde = maliyet>0 ? (kz/maliyet*100) : 0;
 
-Sayısal analizde şunlara bak ve ne anlama geldiğini açıkla: fiyat kazanç oranı, piyasa değeri defter değeri oranı, borç özkaynak oranı, net kar marjı, cari oran, özsermaye karlılığı, temettü verimi, serbest nakit akışı, ciro büyümesi. Rakamı söylemekle kalma, sektör ortalamasına göre iyi mi kötü mü yorumla.
+  $('summary').innerHTML =
+    '<div class="stat"><div class="lbl">Toplam Maliyet</div><div class="val">'+fmt(maliyet)+' TL</div></div>'+
+    '<div class="stat"><div class="lbl">Güncel Değer</div><div class="val">'+fmt(deger)+' TL</div></div>'+
+    '<div class="stat"><div class="lbl">Kâr / Zarar</div><div class="val '+(kz>=0?'art':'eksi')+'">'+(kz>=0?'+':'')+fmt(kz)+' TL</div></div>'+
+    '<div class="stat"><div class="lbl">Getiri</div><div class="val '+(kz>=0?'art':'eksi')+'">'+(yuzde>=0?'+':'')+yuzde.toFixed(2)+'%</div></div>';
 
-Ona borsayı öğret: terimleri sorduğunda sabırla açıkla, bilanço ve gelir tablosu okumayı öğret, KAP bildirimlerini nasıl takip edeceğini anlat, temettü, bedelli bedelsiz sermaye artırımı, halka arz, endeks gibi konuları anlat.
+  if(!data || !data.length){ grid.innerHTML='<div class="empty">Portföyün boş. Hisse eklemeden önce Esta\'ya sorup öğrenmen iyi olur.</div>'; return; }
 
-Dikkat etmesi gerekenleri açıkça söyle: tek hisseye yüklenmemesi, sektör dağıtması, borçla yatırım yapmaması, sosyal medya tüyolarına ve manipülasyona kanmaması, acil parasını borsaya koymaması, panikle satmaması, şirketin bilançosuna bakmadan almaması, aşırı işlem yapmaması.
-
-Riskli veya şüpheli durumları uyar: sürekli zarar eden şirket, aşırı borçlu şirket, denetim görüşü olumsuz olan, SPK cezası almış, sık yönetim değiştiren, açıklaması olmayan ani yükselişler, çok düşük işlem hacmi, sürekli bedelli sermaye artırımı yapan şirketler.
-
-Fikrini net söyle, "bilemem" diye kaçma. "Bence bu şirket şu açıdan güçlü ama şu risk var, ben olsam şuna dikkat ederim" de. Ama son kararın Halime'nin olduğunu ve geleceğin kesin bilinemeyeceğini de belirt. Kesin kazanç vaadi verme.
-
-Elinde hisseler, analizler ve portfoy tabloları var. Portföyünde ne varsa oradan bak, kar zarar durumunu hesapla, yorumla.
-Güncel fiyat bilgin olmayabilir; olmadığında dürüstçe söyle ve şirketin yapısal analizini yap.
-
-KONUM VE YOL TARİFİ:
-Halime bir yere gitmek isterse ("şuraya gideceğim", "nasıl giderim", "yol tarifi") önce nasıl gitmek istediğini sor: otobüs metro Marmaray metrobüs gibi toplu taşımayla mı, arabayla mı, yürüyerek mi. Arkadaş gibi sor, kısa tut.
-Cevabını aldıktan sonra kısaca yolu tarif et (hangi hatlar, yaklaşık süre gibi genel bilgi ver ama kesin konuşma, harita da açılacak) ve cevabının EN SONUNA şu satırı ekle:
-[[KONUM|adres|mod]]
-adres: gidilecek yer, semt ve şehir dahil yaz | mod: transit (toplu taşıma), driving (araba), walking (yürüyerek)
-Örnek: [[KONUM|Zeytinburnu Nuripaşa Mahallesi İstanbul|transit]]
-Bu satırı ekleyince harita otomatik açılır. Sen link verme, sadece bu satırı koy.
-
-DOSYA:
-PDF, fatura, fotoğraf gönderirse oku, önemli bilgileri (tutar, tarih, isim) çıkar, arkadaş gibi anlat.
-Fatura ise tutarı söyle, kasaya kaydedeyim mi diye sor. Evet derse cevabının sonuna ekle:
-[[KASA|tur|kategori|aciklama|tutar|tarih]]
-
-NOT/HATIRLATMA:
-"not al", "unutma", "yarın 3te randevum var" derse, cevabından sonra sona ekle:
-[[KAYDET|tur|icerik|tarih]]
-
-Bu teknik satırlar hariç her şeyde düzgün Türkçe kullan.
-Sen Halime'nin yanındasın. Ona gerçek bir arkadaş ol.`;
-
-const upload = multer({ storage: multer.memoryStorage() });
-
-async function buildContext() {
-  const parts = [`Bugünün tarihi ve saati: ${new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}`];
-  const tablolar = ['hafiza', 'notlar', 'projeler', 'kisiler', 'kontratlar', 'ilanlar', 'hareketler', 'hisseler', 'analizler', 'portfoy'];
-  for (const t of tablolar) {
-    try {
-      const { data, error } = await supabase.from(t).select('*').limit(300);
-      if (error) throw error;
-      if (data && data.length) parts.push(`## ${t}\n${JSON.stringify(data)}`);
-    } catch (err) {
-      parts.push(`## ${t}\n(okunamadı: ${err.message})`);
-    }
-  }
-  return parts.join('\n\n');
+  grid.innerHTML='';
+  data.forEach(p=>{
+    const adet=Number(p.adet||0), alis=Number(p.alis_fiyat||0);
+    const guncel = guncelFiyatlar[p.hisse_kod] || alis;
+    const pkz = (guncel-alis)*adet;
+    const pyuzde = alis>0 ? ((guncel-alis)/alis*100) : 0;
+    const c=document.createElement('div'); c.className='card';
+    c.innerHTML='<h3>'+esc(p.hisse_kod)+'</h3>'+
+      '<div class="line">Adet: <b>'+adet+'</b></div>'+
+      '<div class="line">Alış: <b>'+fmt(alis)+' TL</b></div>'+
+      '<div class="line">Güncel: <b>'+fmt(guncel)+' TL</b></div>'+
+      (p.alis_tarih?'<div class="line">Tarih: <b>'+new Date(p.alis_tarih).toLocaleDateString('tr-TR')+'</b></div>':'')+
+      (p.not_?'<div class="line" style="margin-top:6px">'+esc(p.not_)+'</div>':'')+
+      '<div class="kz '+(pkz>=0?'art':'eksi')+'">'+(pkz>=0?'+':'')+fmt(pkz)+' TL ('+(pyuzde>=0?'+':'')+pyuzde.toFixed(2)+'%)</div>'+
+      '<div class="row"><button class="btn" data-edit="'+p.id+'" style="padding:6px 13px;font-size:12px">Düzenle</button>'+
+      '<button class="btn danger" data-del="'+p.id+'">Sil</button></div>';
+    c.querySelector('[data-del]').onclick=async()=>{
+      if(!confirm('Silinsin mi?')) return;
+      await supabase.from('portfoy').delete().eq('id',p.id); toast('Silindi'); load();
+    };
+    c.querySelector('[data-edit]').onclick=()=>duzenle(p);
+    grid.appendChild(c);
+  });
 }
 
-app.post('/ask', async (req, res) => {
-  try {
-    const { question, dosya, gecmis } = req.body;
-    if (!question && !dosya) return res.status(400).json({ error: 'soru veya dosya gerekli' });
+function temizle(){ ['p_kod','p_adet','p_alis','p_tarih','p_guncel','p_not'].forEach(x=>$(x).value=''); $('p_id').value=''; }
+$('ekleBtn').onclick=()=>{ temizle(); $('modalBaslik').textContent='Hisse Ekle'; $('modal').classList.add('open'); };
+$('kapat').onclick=()=>$('modal').classList.remove('open');
 
-    let icerik;
-    if (dosya && dosya.data) {
-      const blok = dosya.type === 'application/pdf'
-        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dosya.data } }
-        : { type: 'image', source: { type: 'base64', media_type: dosya.type, data: dosya.data } };
-      icerik = [blok, { type: 'text', text: question || 'Bu dosyada ne var? Önemli bilgileri söyle.' }];
-    } else {
-      icerik = question;
-    }
+function duzenle(p){
+  $('p_id').value=p.id; $('p_kod').value=p.hisse_kod||''; $('p_adet').value=p.adet||'';
+  $('p_alis').value=p.alis_fiyat||''; $('p_tarih').value=p.alis_tarih||'';
+  $('p_guncel').value=guncelFiyatlar[p.hisse_kod]||''; $('p_not').value=p.not_||'';
+  $('modalBaslik').textContent='Düzenle'; $('modal').classList.add('open');
+}
 
-    const mesajlar = [];
-    if (Array.isArray(gecmis)) {
-      gecmis.slice(-14).forEach(m => {
-        if (m && m.rol && m.metin) mesajlar.push({ role: m.rol === 'esta' ? 'assistant' : 'user', content: m.metin });
-      });
-    }
-    mesajlar.push({ role: 'user', content: icerik });
+$('kaydet').onclick=async()=>{
+  const kod=$('p_kod').value.trim().toUpperCase();
+  const adet=Number($('p_adet').value||0);
+  const alis=Number($('p_alis').value||0);
+  if(!kod||adet<=0||alis<=0){ toast('Kod, adet ve alış fiyatı gerekli'); return; }
+  const payload={ hisse_kod:kod, adet, alis_fiyat:alis, alis_tarih:$('p_tarih').value||null, not_:$('p_not').value.trim()||null };
+  const id=$('p_id').value; let error;
+  if(id) ({error}=await supabase.from('portfoy').update(payload).eq('id',id));
+  else ({error}=await supabase.from('portfoy').insert(payload));
+  if(error){ toast('Hata: '+error.message); return; }
 
-    const context = await buildContext();
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 900,
-      system: `${SYSTEM_PROMPT}\n\nHalime'nin verisi (sadece sorarsa kullan):\n${context}`,
-      messages: mesajlar,
+  const guncel=Number($('p_guncel').value||0);
+  if(guncel>0){
+    await supabase.from('hisseler').upsert({ kod, fiyat:guncel, guncelleme:new Date().toISOString() }, { onConflict:'kod' });
+  }
+  $('modal').classList.remove('open'); toast(id?'Güncellendi':'Eklendi');
+  load();
+};
+
+$('fiyatBtn').onclick = async ()=>{
+  const { data } = await supabase.from('portfoy').select('hisse_kod');
+  const kodlar = [...new Set((data||[]).map(p=>p.hisse_kod))];
+  if(!kodlar.length){ toast('Portföyünde hisse yok'); return; }
+  toast('Fiyatlar çekiliyor, sunucu uyanıyorsa biraz sürebilir...');
+  try{
+    const r = await fetch(SERVER+'/fiyat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ kodlar })
     });
-    const textBlock = message.content.find((b) => b.type === 'text');
-    let cevap = textBlock ? textBlock.text : 'Bir şeyler ters gitti, tekrar dener misin?';
+    const j = await r.json();
+    const basarili = (j.sonuclar||[]).filter(s=>s.fiyat).length;
+    toast(basarili+' hisse güncellendi');
+    load();
+  }catch(err){ toast('Fiyat alınamadı, tekrar dene'); }
+};
 
-    const m = cevap.match(/\[\[KAYDET\|([^|]*)\|([^|]*)\|([^\]]*)\]\]/);
-    if (m) {
-      const tur = (m[1] || 'not').trim();
-      const icerikNot = (m[2] || '').trim();
-      const tarih = (m[3] || '').trim();
-      cevap = cevap.replace(m[0], '').trim();
-      try {
-        await supabase.from('notlar').insert({ tur, icerik: icerikNot, tarih: tarih ? new Date(tarih.replace(' ', 'T')).toISOString() : null });
-      } catch (e) {}
-    }
-
-    const k = cevap.match(/\[\[KASA\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]\]/);
-    if (k) {
-      const tur = (k[1] || 'gider').trim();
-      const kategori = (k[2] || '').trim();
-      const aciklama = (k[3] || '').trim();
-      const tutar = Number((k[4] || '0').replace(/[^0-9.]/g, '')) || 0;
-      const tarih = (k[5] || '').trim() || new Date().toISOString().slice(0, 10);
-      cevap = cevap.replace(k[0], '').trim();
-      try {
-        await supabase.from('hareketler').insert({ kasa: 'dukkan', tur, kategori, aciklama, tutar, tarih });
-      } catch (e) {}
-    }
-
-    res.json({ answer: cevap });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/ses', async (req, res) => {
-  try {
-    const { metin } = req.body;
-    if (!metin) return res.status(400).json({ error: 'metin gerekli' });
-    const voiceId = 'EXAVITQu4vr4xnSDxMaL';
-    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method: 'POST',
-      headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: metin,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.4, similarity_boost: 0.85, style: 0.25, use_speaker_boost: true },
-      }),
-    });
-    if (!r.ok) { const t = await r.text(); return res.status(500).json({ error: t }); }
-    const buf = Buffer.from(await r.arrayBuffer());
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(buf);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// Yahoo Finance - hisse fiyatlarini cek
-app.post('/fiyat', async (req, res) => {
-  try {
-    const { kodlar } = req.body;
-    if (!Array.isArray(kodlar) || !kodlar.length) return res.status(400).json({ error: 'kodlar gerekli' });
-
-    const sonuclar = [];
-    for (const kod of kodlar) {
-      const sembol = kod.toUpperCase().endsWith('.IS') ? kod.toUpperCase() : kod.toUpperCase() + '.IS';
-      try {
-        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sembol}?interval=1d&range=1d`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
-        if (!r.ok) { sonuclar.push({ kod, hata: 'bulunamadi' }); continue; }
-        const d = await r.json();
-        const meta = d?.chart?.result?.[0]?.meta;
-        if (!meta) { sonuclar.push({ kod, hata: 'veri yok' }); continue; }
-        const fiyat = meta.regularMarketPrice;
-        const oncekiKapanis = meta.chartPreviousClose || meta.previousClose;
-        const degisim = oncekiKapanis ? ((fiyat - oncekiKapanis) / oncekiKapanis * 100) : null;
-
-        await supabase.from('hisseler').upsert({
-          kod: kod.toUpperCase(),
-          ad: meta.longName || meta.shortName || null,
-          fiyat,
-          guncelleme: new Date().toISOString()
-        }, { onConflict: 'kod' });
-
-        sonuclar.push({ kod: kod.toUpperCase(), fiyat, degisim: degisim ? Number(degisim.toFixed(2)) : null });
-      } catch (e) {
-        sonuclar.push({ kod, hata: e.message });
-      }
-    }
-    res.json({ sonuclar });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.get('/', (req, res) => { res.send('Esta sunucusu çalışıyor.'); });
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Esta ${port} portunda çalışıyor`));
+load();
+</script>
+</body>
+</html>
