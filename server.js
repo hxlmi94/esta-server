@@ -211,7 +211,44 @@ app.post('/ses', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Yahoo Finance - hisse fiyatlarini cek
+app.post('/fiyat', async (req, res) => {
+  try {
+    const { kodlar } = req.body;
+    if (!Array.isArray(kodlar) || !kodlar.length) return res.status(400).json({ error: 'kodlar gerekli' });
 
+    const sonuclar = [];
+    for (const kod of kodlar) {
+      const sembol = kod.toUpperCase().endsWith('.IS') ? kod.toUpperCase() : kod.toUpperCase() + '.IS';
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sembol}?interval=1d&range=1d`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        if (!r.ok) { sonuclar.push({ kod, hata: 'bulunamadi' }); continue; }
+        const d = await r.json();
+        const meta = d?.chart?.result?.[0]?.meta;
+        if (!meta) { sonuclar.push({ kod, hata: 'veri yok' }); continue; }
+        const fiyat = meta.regularMarketPrice;
+        const oncekiKapanis = meta.chartPreviousClose || meta.previousClose;
+        const degisim = oncekiKapanis ? ((fiyat - oncekiKapanis) / oncekiKapanis * 100) : null;
+
+        await supabase.from('hisseler').upsert({
+          kod: kod.toUpperCase(),
+          ad: meta.longName || meta.shortName || null,
+          fiyat,
+          guncelleme: new Date().toISOString()
+        }, { onConflict: 'kod' });
+
+        sonuclar.push({ kod: kod.toUpperCase(), fiyat, degisim: degisim ? Number(degisim.toFixed(2)) : null });
+      } catch (e) {
+        sonuclar.push({ kod, hata: e.message });
+      }
+    }
+    res.json({ sonuclar });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get('/', (req, res) => { res.send('Esta sunucusu çalışıyor.'); });
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Esta ${port} portunda çalışıyor`));
